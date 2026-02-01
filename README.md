@@ -1,195 +1,183 @@
 # Sora Watermark Remover
 
-A command-line tool to detect and remove Sora watermarks from videos using computer vision and inpainting techniques.
+Remove Sora watermarks from videos - two methods available:
 
-## Features
+| Method | Speed | How it works |
+|--------|-------|--------------|
+| **URL Mode** | ~5 seconds | Fetches original video directly from OpenAI's CDN |
+| **File Mode** | 5-30 minutes | Processes local video frame-by-frame with inpainting |
 
-- **Automatic Detection**: Detects Sora watermarks using OCR and color-based detection
-- **Multiple Inpainting Methods**: Choose between fast (OpenCV) or high-quality options
-- **Audio Preservation**: Maintains original audio track
-- **YouTube Ready**: Outputs MP4 with H.264 encoding, compatible with all major platforms
-- **Free**: Uses only open-source tools, no API costs
-
-## Requirements
-
-### System Dependencies
-
-- **Python 3.8+**
-- **FFmpeg** (for video encoding)
-- **Tesseract OCR** (optional, improves detection)
-
-Install system dependencies:
+## Quick Start
 
 ```bash
-# macOS
-brew install ffmpeg tesseract
+# Fast method - from Sora share link (recommended)
+python remove_watermark.py "https://sora.chatgpt.com/p/s_xxxxx"
 
-# Ubuntu/Debian
-sudo apt install ffmpeg tesseract-ocr
-
-# Windows
-# Download FFmpeg from https://ffmpeg.org/download.html
-# Download Tesseract from https://github.com/UB-Mannheim/tesseract/wiki
+# Slow method - from local file (when URL doesn't work)
+python remove_watermark.py video.mp4
 ```
 
-### Python Dependencies
+## Installation
+
+### For URL Mode (Fast)
+
+No additional dependencies needed - just Python 3.8+.
+
+### For File Mode (Inpainting)
 
 ```bash
+# Install system dependencies
+brew install ffmpeg tesseract  # macOS
+# or
+sudo apt install ffmpeg tesseract-ocr  # Ubuntu
+
+# Install Python packages
 pip install -r requirements.txt
-```
-
-Or run the setup script:
-
-```bash
-./setup.sh
 ```
 
 ## Usage
 
-### Basic Usage
+### Method 1: URL Mode (Fast) - Recommended
+
+Fetches the original video directly from OpenAI's CDN without the watermark overlay.
 
 ```bash
+# Basic usage
+python remove_watermark.py "https://sora.chatgpt.com/p/s_697f9e9b209c81918c9c1d6f076d2b79"
+
+# Specify output file
+python remove_watermark.py "https://sora.chatgpt.com/p/s_xxxxx" -o my_video.mp4
+
+# Download medium quality (smaller file)
+python remove_watermark.py "https://sora.chatgpt.com/p/s_xxxxx" --quality md
+```
+
+**Quality options:**
+- `source` - Original HD quality (default)
+- `md` - Medium quality (smaller file)
+- `ld` - Low quality (smallest file)
+
+### Method 2: File Mode (Inpainting)
+
+For when you have a local video file (e.g., downloaded with watermark, screen recorded).
+
+```bash
+# Basic usage
 python remove_watermark.py video.mp4
-```
 
-This will create `video_cleaned.mp4` in the same directory.
-
-### Specify Output File
-
-```bash
+# Specify output
 python remove_watermark.py video.mp4 -o clean_video.mp4
-```
 
-### Preview Detection
-
-Before processing, preview what the tool detects as watermark:
-
-```bash
-# Display preview window
+# Preview detection before processing
 python remove_watermark.py video.mp4 --preview
 
-# Save preview to file
-python remove_watermark.py video.mp4 --preview --preview-output detection.png
-
-# Preview a specific frame
-python remove_watermark.py video.mp4 --preview --frame 100
-```
-
-### Inpainting Methods
-
-| Method | Speed | Quality | Description |
-|--------|-------|---------|-------------|
-| `opencv` | Fast | Good | Default. Telea algorithm |
-| `opencv-ns` | Medium | Better | Navier-Stokes algorithm |
-| `hybrid` | Medium | Better | OpenCV with post-processing |
-| `simple` | Very Fast | Basic | Blur-based (for small watermarks) |
-
-```bash
-# Use Navier-Stokes (smoother results)
+# Higher quality inpainting (slower)
 python remove_watermark.py video.mp4 --method opencv-ns
 
-# Use hybrid approach
-python remove_watermark.py video.mp4 --method hybrid
-```
-
-### Adjust Detection Sensitivity
-
-If the watermark isn't fully removed, increase the padding:
-
-```bash
+# Increase removal area if watermark not fully removed
 python remove_watermark.py video.mp4 --padding 30
 ```
 
-If too much of the image is being removed, decrease it:
-
-```bash
-python remove_watermark.py video.mp4 --padding 10
-```
-
-### Debug Mode
-
-To see exactly what's being detected:
-
-```bash
-python remove_watermark.py video.mp4 --debug-mask -o debug_output.mp4
-```
-
-This outputs a video with red overlay showing detected watermark regions.
-
-### Faster Processing (Skip OCR)
-
-If detection is working well, skip OCR for faster processing:
-
-```bash
-python remove_watermark.py video.mp4 --no-ocr
-```
+**Inpainting methods:**
+| Method | Speed | Quality |
+|--------|-------|---------|
+| `opencv` | Fast | Good (default) |
+| `opencv-ns` | Medium | Better |
+| `hybrid` | Medium | Better |
+| `simple` | Very Fast | Basic |
 
 ## How It Works
 
-1. **Detection**: Each frame is analyzed to find the Sora watermark:
-   - OCR looks for "Sora" text and @username patterns
-   - Color detection finds white/light overlays in corners
-   - Optional template matching for the Sora logo
+### URL Mode
 
-2. **Mask Generation**: A binary mask is created covering the watermark area with configurable padding
+1. Extracts video ID from Sora share link
+2. Calls OpenAI's public API: `https://sora.chatgpt.com/backend/public/generations/{id}`
+3. Gets direct CDN URL for the original `source` quality video
+4. Downloads the file - no watermark, no processing, full quality
 
-3. **Inpainting**: The masked region is filled in using surrounding pixel information:
-   - OpenCV algorithms analyze nearby textures and colors
-   - The watermark area is seamlessly replaced
+This works because OpenAI stores the original video separately from the watermarked version displayed publicly.
 
-4. **Reconstruction**: Processed frames are combined with original audio into a new MP4 file
+### File Mode
 
-## Processing Time
-
-On a MacBook Pro:
-- **OpenCV method**: ~5-15 minutes for a 20-second video
-- **Higher quality methods**: ~15-30 minutes for same video
-
-Factors affecting speed:
-- Video resolution (4K takes longer than 1080p)
-- Video length
-- Inpainting method chosen
-- Whether OCR is enabled
+1. Loads local video and extracts frames
+2. Detects watermark using OCR ("Sora" text) and color detection (white overlay)
+3. Creates mask around detected watermark region
+4. Applies inpainting algorithm to fill in the masked area
+5. Reconstructs video with original audio
 
 ## Troubleshooting
 
-### "Watermark not detected"
+### URL Mode Issues
 
-1. Try increasing padding: `--padding 30`
-2. Make sure OCR is enabled (don't use `--no-ocr`)
-3. Use `--preview` to see what's being detected
+**"Connection error" or "Access denied"**
+- The video may be private or deleted
+- OpenAI may have changed their API
+- Try downloading the video manually and use file mode
 
-### "Too much is being removed"
+**"Could not extract video ID"**
+- Make sure you're using a Sora share link
+- Format should be: `https://sora.chatgpt.com/p/s_xxxxx` or `https://sora.chatgpt.com/g/gen_xxxxx`
 
-1. Decrease padding: `--padding 10`
-2. Use `--preview` to check detection accuracy
+### File Mode Issues
 
-### "FFmpeg not found"
+**"Watermark not fully removed"**
+- Increase padding: `--padding 30` or `--padding 40`
+- Try different method: `--method opencv-ns`
 
-Install FFmpeg:
-- macOS: `brew install ffmpeg`
-- Ubuntu: `sudo apt install ffmpeg`
+**"Too much being removed"**
+- Decrease padding: `--padding 10`
+- Use `--preview` to check detection
 
-### "easyocr import error"
-
-```bash
-pip install easyocr
-```
-
-### Slow processing
-
-1. Use `--no-ocr` if detection is working
-2. Use `--method simple` for fastest (lower quality)
-3. Consider processing on a machine with GPU
+**"OCR not detecting watermark"**
+- Make sure EasyOCR is installed: `pip install easyocr`
+- The watermark may be too small or obscured
 
 ## Output Format
 
-The tool outputs:
+Both modes output:
 - **Container**: MP4
-- **Video Codec**: H.264 (libx264)
-- **Audio Codec**: AAC (192kbps)
-- **Quality**: CRF 18 (high quality)
+- **Video Codec**: H.264 (libx264) for file mode, original for URL mode
+- **Audio**: Preserved from original
 - **Compatibility**: YouTube, Instagram, TikTok, Twitter
+
+## API Reference
+
+The tool can also be used as a Python library:
+
+```python
+# URL mode
+from src.sora_fetcher import fetch_sora_video
+
+path, info = fetch_sora_video("https://sora.chatgpt.com/p/s_xxxxx")
+print(f"Downloaded: {path}")
+print(f"Resolution: {info.width}x{info.height}")
+
+# File mode
+from src.video_processor import remove_watermark
+
+remove_watermark("input.mp4", "output.mp4", method="opencv")
+```
+
+## Project Structure
+
+```
+watermark-remover/
+├── remove_watermark.py      # Main CLI tool
+├── requirements.txt         # Python dependencies
+├── setup.sh                # Setup script
+├── src/
+│   ├── sora_fetcher.py     # URL mode - fetches from Sora CDN
+│   ├── detector.py         # Watermark detection (OCR + color)
+│   ├── inpainter.py        # Inpainting algorithms
+│   └── video_processor.py  # Video processing pipeline
+├── templates/              # Watermark templates (optional)
+└── output/                 # Default output directory
+```
+
+## Credits
+
+- URL extraction method inspired by [SoraChatGPTDownloader](https://github.com/AzozzALFiras/SoraChatGPTDownloader)
+- Inpainting uses OpenCV's implementation of Telea and Navier-Stokes algorithms
 
 ## License
 
@@ -197,4 +185,4 @@ MIT License - Use freely for personal projects.
 
 ## Disclaimer
 
-This tool is for personal use on your own content. Respect copyright and terms of service of content platforms.
+This tool is for personal use on your own content. The URL mode accesses publicly available API endpoints. Respect OpenAI's terms of service and content ownership rights.
