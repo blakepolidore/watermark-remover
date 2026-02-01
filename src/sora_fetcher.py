@@ -99,7 +99,10 @@ class SoraFetcher:
     def _get_cookie_header(self) -> Optional[str]:
         """Get the Cookie header value for requests."""
         if self.cookies_string:
-            return self.cookies_string
+            # Sanitize cookie: replace Unicode ellipsis with three dots
+            # (browser may convert ... to … when copying)
+            cookie = self.cookies_string.replace('\u2026', '...')
+            return cookie
 
         if self.cookie_jar:
             # Extract cookies for sora.chatgpt.com
