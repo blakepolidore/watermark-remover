@@ -75,7 +75,14 @@ def check_dependencies_for_inpainting():
     return True
 
 
-def download_from_url(url: str, output_path: str = None, quality: str = "source", verbose: bool = False) -> bool:
+def download_from_url(
+    url: str,
+    output_path: str = None,
+    quality: str = "source",
+    verbose: bool = False,
+    cookies_file: str = None,
+    cookies: str = None,
+) -> bool:
     """
     Download video directly from Sora URL (fast method).
 
@@ -93,9 +100,17 @@ def download_from_url(url: str, output_path: str = None, quality: str = "source"
     print("=" * 60)
     print(f"URL: {url}")
     print("Method: Direct CDN fetch (no processing needed)")
+
+    if cookies_file:
+        print(f"Cookies: Loading from {cookies_file}")
+    elif cookies:
+        print(f"Cookies: Using provided cookie string")
+    else:
+        print("Cookies: None (may require authentication)")
+
     print("=" * 60)
 
-    fetcher = SoraFetcher()
+    fetcher = SoraFetcher(cookies_file=cookies_file, cookies_string=cookies)
 
     # First, get video info
     print("\nFetching video information...")
@@ -314,6 +329,16 @@ Examples:
         help="Enable verbose logging (shows API requests/responses for debugging)"
     )
 
+    parser.add_argument(
+        "--cookies-file",
+        help="Path to cookies file (Netscape format) for authentication. Export from browser using a cookies extension."
+    )
+
+    parser.add_argument(
+        "--cookies",
+        help="Cookie string for authentication (e.g., from browser dev tools). Format: 'name1=value1; name2=value2'"
+    )
+
     # Inpainting options (only for local file mode)
     inpaint_group = parser.add_argument_group("Inpainting options (local file mode only)")
 
@@ -371,7 +396,14 @@ Examples:
     # Determine mode based on input
     if is_sora_url(args.input):
         # URL mode - fast download
-        success = download_from_url(args.input, args.output, args.quality, args.verbose)
+        success = download_from_url(
+            args.input,
+            args.output,
+            args.quality,
+            args.verbose,
+            args.cookies_file,
+            args.cookies,
+        )
     else:
         # File mode - inpainting
         input_path = Path(args.input)

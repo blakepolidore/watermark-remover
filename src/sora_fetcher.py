@@ -3,12 +3,17 @@ Sora Video Fetcher Module
 
 Fetches original videos directly from Sora share links without watermarks.
 This is the fast method - no processing needed, just downloads the source file.
+
+Note: OpenAI now requires authentication for the API. You can provide:
+1. A cookies file exported from your browser (Netscape format)
+2. Or manually provide cookies as a string
 """
 
 import re
 import json
 import urllib.request
 import urllib.error
+import http.cookiejar
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass
@@ -59,14 +64,53 @@ class SoraFetcher:
         r"sora\.chatgpt\.com/generations/([a-zA-Z0-9_]+)",
     ]
 
-    def __init__(self, user_agent: Optional[str] = None):
+    def __init__(
+        self,
+        user_agent: Optional[str] = None,
+        cookies_file: Optional[str] = None,
+        cookies_string: Optional[str] = None,
+    ):
         """
         Initialize the Sora fetcher.
 
         Args:
             user_agent: Custom user agent string (optional)
+            cookies_file: Path to cookies file in Netscape format (from browser export)
+            cookies_string: Raw cookie string (e.g., "__Secure-next-auth.session-token=xxx")
         """
-        self.user_agent = user_agent or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        self.user_agent = user_agent or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        self.cookies_string = cookies_string
+        self.cookie_jar = None
+
+        # Load cookies from file if provided
+        if cookies_file and Path(cookies_file).exists():
+            self._load_cookies_from_file(cookies_file)
+
+    def _load_cookies_from_file(self, cookies_file: str):
+        """Load cookies from a Netscape format cookies file."""
+        try:
+            self.cookie_jar = http.cookiejar.MozillaCookieJar(cookies_file)
+            self.cookie_jar.load(ignore_discard=True, ignore_expires=True)
+            log(f"Loaded {len(self.cookie_jar)} cookies from {cookies_file}")
+        except Exception as e:
+            log(f"Failed to load cookies file: {e}")
+            self.cookie_jar = None
+
+    def _get_cookie_header(self) -> Optional[str]:
+        """Get the Cookie header value for requests."""
+        if self.cookies_string:
+            return self.cookies_string
+
+        if self.cookie_jar:
+            # Extract cookies for sora.chatgpt.com
+            cookies = []
+            for cookie in self.cookie_jar:
+                if "chatgpt.com" in cookie.domain or "openai.com" in cookie.domain:
+                    cookies.append(f"{cookie.name}={cookie.value}")
+            if cookies:
+                return "; ".join(cookies)
+
+        return None
 
     def extract_video_id(self, url: str) -> Optional[str]:
         """
@@ -130,7 +174,16 @@ class SoraFetcher:
             "Referer": "https://sora.chatgpt.com/",
             "Origin": "https://sora.chatgpt.com",
         }
-        log(f"Request headers: {json.dumps(headers, indent=2)}")
+
+        # Add cookies if available
+        cookie_header = self._get_cookie_header()
+        if cookie_header:
+            headers["Cookie"] = cookie_header
+            log(f"Using cookies (length: {len(cookie_header)} chars)")
+        else:
+            log("No cookies provided - request may fail with 401")
+
+        log(f"Request headers: {json.dumps({k: v[:50] + '...' if len(str(v)) > 50 else v for k, v in headers.items()}, indent=2)}")
 
         # Make request
         request = urllib.request.Request(api_url, headers=headers)
@@ -161,9 +214,21 @@ class SoraFetcher:
 
             if e.code == 404:
                 raise ValueError(f"Video not found: {video_id}")
+            elif e.code == 401:
+                raise ConnectionError(
+                    f"Authentication required (HTTP 401).\n"
+                    f"  OpenAI now requires login to access Sora videos.\n\n"
+                    f"  To authenticate, provide cookies from your browser:\n"
+                    f"  1. Log into sora.chatgpt.com in Chrome/Firefox\n"
+                    f"  2. Open Developer Tools (F12) > Application > Cookies\n"
+                    f"  3. Copy the cookie values and use --cookies flag\n\n"
+                    f"  Example:\n"
+                    f"    python remove_watermark.py URL --cookies \"__Secure-next-auth.session-token=YOUR_TOKEN\"\n\n"
+                    f"  Or export cookies to a file using a browser extension and use --cookies-file"
+                )
             elif e.code == 403:
                 raise ConnectionError(
-                    f"Access denied (HTTP 403). The video may be private or the API may have changed.\n"
+                    f"Access denied (HTTP 403). The video may be private.\n"
                     f"  API URL: {api_url}\n"
                     f"  Response: {error_body[:200] if error_body else 'No response body'}"
                 )
