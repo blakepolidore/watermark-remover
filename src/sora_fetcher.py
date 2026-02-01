@@ -13,6 +13,19 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 
+# Global verbose flag
+VERBOSE = False
+
+def set_verbose(enabled: bool):
+    """Enable or disable verbose logging."""
+    global VERBOSE
+    VERBOSE = enabled
+
+def log(message: str):
+    """Print a log message if verbose mode is enabled."""
+    if VERBOSE:
+        print(f"[DEBUG] {message}")
+
 
 @dataclass
 class SoraVideoInfo:
@@ -96,35 +109,72 @@ class SoraFetcher:
         """
         # Extract ID if URL provided
         if url_or_id.startswith("http"):
+            log(f"Input URL: {url_or_id}")
             video_id = self.extract_video_id(url_or_id)
             if not video_id:
                 raise ValueError(f"Could not extract video ID from URL: {url_or_id}")
+            log(f"Extracted video ID: {video_id}")
         else:
             video_id = url_or_id
+            log(f"Using direct video ID: {video_id}")
 
         # Build API URL
         api_url = f"{self.API_BASE}/{video_id}"
+        log(f"API URL: {api_url}")
+
+        # Build request headers
+        headers = {
+            "User-Agent": self.user_agent,
+            "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://sora.chatgpt.com/",
+            "Origin": "https://sora.chatgpt.com",
+        }
+        log(f"Request headers: {json.dumps(headers, indent=2)}")
 
         # Make request
-        request = urllib.request.Request(
-            api_url,
-            headers={
-                "User-Agent": self.user_agent,
-                "Accept": "application/json",
-            }
-        )
+        request = urllib.request.Request(api_url, headers=headers)
 
         try:
+            log("Sending request...")
             with urllib.request.urlopen(request, timeout=30) as response:
-                data = json.loads(response.read().decode("utf-8"))
+                status = response.status
+                resp_headers = dict(response.headers)
+                body = response.read().decode("utf-8")
+
+                log(f"Response status: {status}")
+                log(f"Response headers: {json.dumps(resp_headers, indent=2)}")
+                log(f"Response body (first 500 chars): {body[:500]}")
+
+                data = json.loads(body)
+
         except urllib.error.HTTPError as e:
+            error_body = ""
+            try:
+                error_body = e.read().decode("utf-8")
+            except:
+                pass
+
+            log(f"HTTP Error: {e.code} {e.reason}")
+            log(f"Error headers: {dict(e.headers) if e.headers else 'None'}")
+            log(f"Error body: {error_body[:500] if error_body else 'Empty'}")
+
             if e.code == 404:
                 raise ValueError(f"Video not found: {video_id}")
             elif e.code == 403:
-                raise ConnectionError(f"Access denied. The video may be private or the API may have changed.")
+                raise ConnectionError(
+                    f"Access denied (HTTP 403). The video may be private or the API may have changed.\n"
+                    f"  API URL: {api_url}\n"
+                    f"  Response: {error_body[:200] if error_body else 'No response body'}"
+                )
             else:
-                raise ConnectionError(f"API request failed with status {e.code}: {e.reason}")
+                raise ConnectionError(
+                    f"API request failed with status {e.code}: {e.reason}\n"
+                    f"  API URL: {api_url}\n"
+                    f"  Response: {error_body[:200] if error_body else 'No response body'}"
+                )
         except urllib.error.URLError as e:
+            log(f"URL Error: {e.reason}")
             raise ConnectionError(f"Network error: {e.reason}")
 
         # Parse response

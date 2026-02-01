@@ -75,13 +75,18 @@ def check_dependencies_for_inpainting():
     return True
 
 
-def download_from_url(url: str, output_path: str = None, quality: str = "source") -> bool:
+def download_from_url(url: str, output_path: str = None, quality: str = "source", verbose: bool = False) -> bool:
     """
     Download video directly from Sora URL (fast method).
 
     This fetches the original video without watermark from OpenAI's CDN.
     """
-    from src.sora_fetcher import SoraFetcher
+    from src.sora_fetcher import SoraFetcher, set_verbose
+
+    # Enable verbose logging if requested
+    if verbose:
+        set_verbose(True)
+        print("[VERBOSE MODE ENABLED]")
 
     print("=" * 60)
     print("Sora Watermark Remover - FAST MODE")
@@ -303,6 +308,12 @@ Examples:
         help="Video quality for URL mode: source (HD), md (medium), ld (low). Default: source"
     )
 
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable verbose logging (shows API requests/responses for debugging)"
+    )
+
     # Inpainting options (only for local file mode)
     inpaint_group = parser.add_argument_group("Inpainting options (local file mode only)")
 
@@ -360,7 +371,7 @@ Examples:
     # Determine mode based on input
     if is_sora_url(args.input):
         # URL mode - fast download
-        success = download_from_url(args.input, args.output, args.quality)
+        success = download_from_url(args.input, args.output, args.quality, args.verbose)
     else:
         # File mode - inpainting
         input_path = Path(args.input)
